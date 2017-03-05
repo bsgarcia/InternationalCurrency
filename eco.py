@@ -52,7 +52,8 @@ class Economy(object):
                                 parameters["alpha"]["1_2"]],
                                [0, 
                                 parameters["alpha"]["2_1"],
-                                parameters["alpha"]["2_2"]]])
+                                parameters["alpha"]["2_2"]]]) #Poisson arrival rate (number of agents 
+                                                              #meeting in one unit of time)
         
         self.set_up()
 
@@ -64,9 +65,9 @@ class Economy(object):
         cond = self.nationality != self.currency  #Check if one agent i holds money j =/= i
         cond2 = self.currency != 0               #This currency has to be different from 0
         match = cond * cond2
-        steady = self.steady_state[1] < 0.15 
-         
-        return [country in self.nationality[match] for country in [0, 1, 2]]
+        steady = self.steady_state[1] < 0.07 
+        
+        return [(country in self.nationality[match]) * steady for country in [0, 1, 2]]
 
     #-----------------------------------------------------------------------------------------#
     def set_up(self):
@@ -165,27 +166,23 @@ class Economy(object):
     def poisson_distribution(self):
         """returns number of meeting for ij, ii randomly 
         picked in a poisson distribution 
-        based on sample and average arrival rate"""
+        based on population sample and average arrival rate"""
         
         nb_of_meeting_ii = []
         nb_of_meeting_ij = []
         
-        while True:    
-            for i in [1, 2]:
-                array = np.random.poisson(self.alpha[i, i] * self.nb_type, self.nb)
-                nb_of_meeting_ii.append(np.random.choice(array))
-            
-
-            for i in [(1, 2), (2, 1)]:
-                array = np.random.poisson(self.alpha[i[0], i[1]] * self.nb_type, self.nb)
-                nb_of_meeting_ij.append(np.random.choice(array))
-            
-            if (np.all(np.array(nb_of_meeting_ii) < self.nb) 
-                    and np.all(np.array(nb_of_meeting_ii) < self.nb)):
-                    break
-
+        #randomly select an ii number of meeting from poisson distribution
+        for i in [1, 2]:
+            array = np.random.poisson(self.alpha[i, i] * self.nb_type, self.nb)
+            nb_of_meeting_ii.append(np.random.choice(array))
+        
+        #randomly select an ij number of meeting from poisson distribution
+        for i in [(1, 2), (2, 1)]:
+            array = np.random.poisson(self.alpha[i[0], i[1]] * self.nb_type, self.nb)
+            nb_of_meeting_ij.append(np.random.choice(array))
+        
         return {"ii": nb_of_meeting_ii, "ij": nb_of_meeting_ij}
-
+    
     #-----------------------------------------------------------------------------------------#
     def main_agents_random_matching(self, nationality, meeting_dict):
         
@@ -206,31 +203,32 @@ class Economy(object):
         
         #for number of meeting 
         for i in range(number_of_meeting):
-            
-            #we picks randoms idx and then remove them
-            idx_1 = np.random.randint(len(nationality_1))
-            agent_idx_1 = nationality_1[idx_1]
-            nationality_1.pop(idx_1)
-            
-            idx_2 = np.random.randint(len(nationality_2))
-            agent_idx_2 = nationality_2[idx_2]
-            nationality_2.pop(idx_2)
-            
-            check = [self.currency[idx_1], self.currency[idx_2]]
-            buyer_and_seller = (0 in check) and (1 in check or 2 in check)
+            if len(nationality_1) > 1 and len(nationality_2) > 1:
+                
+                #we picks randoms idx and then remove them
+                idx_1 = np.random.randint(len(nationality_1))
+                agent_idx_1 = nationality_1[idx_1]
+                nationality_1.pop(idx_1)
+                
+                idx_2 = np.random.randint(len(nationality_2))
+                agent_idx_2 = nationality_2[idx_2]
+                nationality_2.pop(idx_2)
+                
+                check = [self.currency[idx_1], self.currency[idx_2]]
+                buyer_and_seller = (0 in check) and (1 in check or 2 in check)
 
-            if buyer_and_seller:
-                
-                #find idx of != 0 in check list (meaning buyer)
-                buyer = list(compress(range(len(check)), check))[0]
-                buyer_idx = (idx_1, idx_2)[buyer]
-                
-                #find idx of 0 in check list (meaning seller)
-                seller = check.index(0)
-                seller_idx = (idx_1, idx_2)[seller]
-                
-                self.make_choice_and_exchange(buyer_idx, seller_idx) 
-        
+                if buyer_and_seller:
+                    
+                    #find idx of != 0 in check list (meaning buyer)
+                    buyer = list(compress(range(len(check)), check))[0]
+                    buyer_idx = (idx_1, idx_2)[buyer]
+                    
+                    #find idx of 0 in check list (meaning seller)
+                    seller = check.index(0)
+                    seller_idx = (idx_1, idx_2)[seller]
+                    
+                    self.make_choice_and_exchange(buyer_idx, seller_idx) 
+            
         return (nationality_1, nationality_2)
      
    #-----------------------------------------------------------------------------------------#
@@ -246,13 +244,18 @@ class Economy(object):
         buyer_currency = int(self.currency[buyer_idx])
         seller_currency = int(self.currency[seller_idx])
         
+        #check if sellers products the good the buyer consumes
         buyer_acceptance = buyer_type == self.switch_type[seller_type]
+        
+        #check if it's an ii exchange or an ij exchange, if ii the seller
+        #accepts directly
         seller_acceptance = buyer_currency == seller_nationality
         
+        #otherwise the seller computes his advantage to own
+        #a foreign currency
         if not seller_acceptance:
             seller_acceptance = (self.value[seller_nationality, buyer_currency]
                                 - self.c) > self.value[seller_nationality, 0]
-        
         if buyer_acceptance and seller_acceptance:
             self.currency[buyer_idx], self.currency[seller_idx] = \
             seller_currency, buyer_currency
@@ -327,7 +330,7 @@ class Economy(object):
                                                     + self.value[country, 0]
                                                     - self.value[country, self.switch_country[country]])
                 
-                #check if steady state equations are statisfied 
+                #check if steady state equation is statisfied 
                 self.steady_state[country] = (self.alpha[country, self.switch_country[country]]
                                              * mi0
                                              * mji)\
@@ -346,15 +349,15 @@ class Economy(object):
         parameters = { "c": 0.1,
                    "u": 0.2,
                    "r": 0.2,
-                   "money": {1: 0.5,
-                             2: 0.5
+                   "money": {1: 0.3,
+                             2: 0.3
                              },
                    "alpha": {"1_1": 1,
-                             "1_2": 1,
-                             "2_1": 1,
+                             "1_2": 15,
+                             "2_1": 15,
                              "2_2": 1
                              },
-                   "v": {"1_0":  0.5,
+                   "v": { "1_0": 0.5,
                           "1_1": 0.5,
                           "1_2": 0.5,
                           "2_0": 0.5,
@@ -363,7 +366,7 @@ class Economy(object):
                              },
                    "nb_type": 3,
                    "nb_countries": 2,
-                   "nb": 200,
+                   "nb": 400,
                    "growth": 0.2
                 }
     
@@ -380,10 +383,10 @@ class Economy(object):
             Eco.update_values()
             print(Eco.value)
             print(Eco.equilibrium)
+            print(Eco.steady_state)
             i += 1
             if i > 50:
                 import pdb; pdb.set_trace()
             
 if __name__ == '__main__':
-    
     Economy.main()
