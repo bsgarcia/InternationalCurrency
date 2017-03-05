@@ -63,11 +63,10 @@ class Economy(object):
         
         cond = self.nationality != self.currency  #Check if one agent i holds money j =/= i
         cond2 = self.currency != 0               #This currency has to be different from 0
-        match = cond*cond2
-        print(self.steady_state)
-        steady = self.steady_state[1] < 0.1 
+        match = cond * cond2
+        steady = self.steady_state[1] < 0.15 
          
-        return [country in self.nationality[match] and steady for country in [0, 1, 2]]
+        return [country in self.nationality[match] for country in [0, 1, 2]]
 
     #-----------------------------------------------------------------------------------------#
     def set_up(self):
@@ -110,10 +109,10 @@ class Economy(object):
         which has a part of currency holders in it.
         """
         
-        fraction = int(len(newborn[0]) * self.money)
+        fraction = [int(len(newborn[0]) * self.money[i]) for i in [1, 2]]
 
         for i in range(len(newborn)):
-            newborn[i][0:fraction] = i + 1
+            newborn[i][0:fraction[i]] = i + 1
         
         return newborn 
     
@@ -171,14 +170,19 @@ class Economy(object):
         nb_of_meeting_ii = []
         nb_of_meeting_ij = []
         
-        for i in [1, 2]:
-            array = np.random.poisson(self.alpha[i, i] * self.nb_type, self.nb)
-            nb_of_meeting_ii.append(np.random.choice(array))
-        
+        while True:    
+            for i in [1, 2]:
+                array = np.random.poisson(self.alpha[i, i] * self.nb_type, self.nb)
+                nb_of_meeting_ii.append(np.random.choice(array))
+            
 
-        for i in [(1, 2), (2, 1)]:
-            array = np.random.poisson(self.alpha[i[0], i[1]] * self.nb_type, self.nb)
-            nb_of_meeting_ij.append(np.random.choice(array))
+            for i in [(1, 2), (2, 1)]:
+                array = np.random.poisson(self.alpha[i[0], i[1]] * self.nb_type, self.nb)
+                nb_of_meeting_ij.append(np.random.choice(array))
+            
+            if (np.all(np.array(nb_of_meeting_ii) < self.nb) 
+                    and np.all(np.array(nb_of_meeting_ii) < self.nb)):
+                    break
 
         return {"ii": nb_of_meeting_ii, "ij": nb_of_meeting_ij}
 
@@ -212,22 +216,35 @@ class Economy(object):
             agent_idx_2 = nationality_2[idx_2]
             nationality_2.pop(idx_2)
             
-            self.make_choice_and_exchange(agent_idx_1, agent_idx_2)
+            check = [self.currency[idx_1], self.currency[idx_2]]
+            buyer_and_seller = (0 in check) and (1 in check or 2 in check)
+
+            if buyer_and_seller:
+                
+                #find idx of != 0 in check list (meaning buyer)
+                buyer = list(compress(range(len(check)), check))[0]
+                buyer_idx = (idx_1, idx_2)[buyer]
+                
+                #find idx of 0 in check list (meaning seller)
+                seller = check.index(0)
+                seller_idx = (idx_1, idx_2)[seller]
+                
+                self.make_choice_and_exchange(buyer_idx, seller_idx) 
         
         return (nationality_1, nationality_2)
      
    #-----------------------------------------------------------------------------------------#
-    def make_choice_and_exchange(self, id_buyer, id_seller):
+    def make_choice_and_exchange(self, buyer_idx, seller_idx):
         """exchange or not"""
 
-        seller_nationality = int(self.nationality[id_seller])
-        buyer_nationality =  int(self.nationality[id_buyer])
+        seller_nationality = int(self.nationality[seller_idx])
+        buyer_nationality =  int(self.nationality[buyer_idx])
         
-        seller_type = int(self.type[id_seller])
-        buyer_type = int(self.type[id_buyer])
+        seller_type = int(self.type[seller_idx])
+        buyer_type = int(self.type[buyer_idx])
         
-        buyer_currency = int(self.currency[id_buyer])
-        seller_currency = int(self.currency[id_seller])
+        buyer_currency = int(self.currency[buyer_idx])
+        seller_currency = int(self.currency[seller_idx])
         
         buyer_acceptance = buyer_type == self.switch_type[seller_type]
         seller_acceptance = buyer_currency == seller_nationality
@@ -237,7 +254,7 @@ class Economy(object):
                                 - self.c) > self.value[seller_nationality, 0]
         
         if buyer_acceptance and seller_acceptance:
-            self.currency[id_buyer], self.currency[id_seller] = \
+            self.currency[buyer_idx], self.currency[seller_idx] = \
             seller_currency, buyer_currency
 
   #-----------------------------------------------------------------------------------------#
@@ -319,33 +336,34 @@ class Economy(object):
                                              * mj0
                                              * self.equilibrium[self.switch_country[country]])\
                                              + self.growth\
-                                             * (self.money
+                                             * (self.money[country]
                                              - mii)
                                         
   #-----------------------------------------------------------------------------------------#
-    
     @staticmethod
     def main():
     
         parameters = { "c": 0.1,
                    "u": 0.2,
                    "r": 0.2,
-                   "money": 0.5,
-                   "alpha": {"1_1": 5,
-                             "1_2": 10,
-                             "2_1": 10,
-                             "2_2": 5
+                   "money": {1: 0.5,
+                             2: 0.5
                              },
-                   "v": {"1_0":  1000,
+                   "alpha": {"1_1": 1,
+                             "1_2": 1,
+                             "2_1": 1,
+                             "2_2": 1
+                             },
+                   "v": {"1_0":  0.5,
                           "1_1": 0.5,
                           "1_2": 0.5,
-                          "2_0": 1000,
+                          "2_0": 0.5,
                           "2_1": 0.5,
                           "2_2": 0.5
                              },
                    "nb_type": 3,
                    "nb_countries": 2,
-                   "nb": 400,
+                   "nb": 200,
                    "growth": 0.2
                 }
     
@@ -363,7 +381,7 @@ class Economy(object):
             print(Eco.value)
             print(Eco.equilibrium)
             i += 1
-            if i > 15:
+            if i > 50:
                 import pdb; pdb.set_trace()
             
 if __name__ == '__main__':
