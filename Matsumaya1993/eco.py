@@ -2,7 +2,7 @@
 import numpy as np
 import time
 import pickle
-from itertools import compress
+from itertools import compress, permutations
 
 
 class Economy(object):
@@ -67,7 +67,7 @@ class Economy(object):
         cond = self.nationality != self.currency  #Check if one agent i holds money j =/= i
         cond2 = self.currency != 0               #This currency has to be different from 0
         match = cond * cond2
-        steady = self.steady_state[1] < 0.05
+        steady = self.steady_state[1] < 0.1 
         
         return [(country in self.nationality[match]) * steady for country in [0, 1, 2]]
 
@@ -293,7 +293,6 @@ class Economy(object):
                 mjj = len(self.currency[cond_mjj]) / self.nb
                 mj0 = len(self.currency[cond_mj0]) / self.nb
                 
-                #update value of being a seller depending on the country
                 if currency == 0:
                     self.value[country, currency] = self.sigmoid(
                                                     self.r
@@ -312,8 +311,6 @@ class Economy(object):
                                                     * (self.value[country, self.switch_country[country]]
                                                     - self.value[country, currency]
                                                     - self.c)))
-                
-                #update value of owning a local currency
                 elif currency == country:
                     self.value[country, currency] = self.sigmoid(
                                                     self.r
@@ -325,8 +322,7 @@ class Economy(object):
                                                     * (self.u
                                                     + self.value[country, 0]
                                                     - self.value[country, country])))
-                
-                #update value of owning a foreign currency
+                    
                 else:                                    
                     self.value[country, currency] = self.sigmoid(
                                                     self.r
@@ -357,14 +353,14 @@ class Economy(object):
     
         parameters = { "c": 0.01,
                    "u": 0.2,
-                   "r": 0.1,
-                   "money": {1: 0.9,
+                   "r": 0.2,
+                   "money": {1: 0.1,
                              2: 0.9
                              },
-                   "alpha": {"1_1": 8,
-                             "1_2": 9,
-                             "2_1": 9,
-                             "2_2": 8
+                   "alpha": {"1_1": 5,
+                             "1_2": 5,
+                             "2_1": 5,
+                             "2_2": 5
                              },
                    "v": { "1_0": 0.5,
                           "1_1": 0.5,
@@ -376,7 +372,7 @@ class Economy(object):
                    "nb_type": 3,
                    "nb_countries": 2,
                    "nb": 400,
-                   "growth": 0.02
+                   "growth": 0.2
                 }
     
         Eco = Economy(parameters)
@@ -393,9 +389,9 @@ class Economy(object):
             print(Eco.value)
             print(Eco.equilibrium)
             print(Eco.steady_state)
-            # i += 1
-            # if i > 50:
-                # import pdb; pdb.set_trace()
+            i += 1
+            if i > 50:
+                import pdb; pdb.set_trace()
             
 if __name__ == '__main__':
     Economy.main()
