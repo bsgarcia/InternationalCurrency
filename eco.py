@@ -30,7 +30,12 @@ class Economy(object):
         self.switch_country = {1: 2, 2: 1}
        
         self.steady_state = [1] * (self.nb_countries + 1)
+        
+        self.exchange_list = []
+        
+        self.learn = 0.5
 
+        self.reward = np.zeros(self.nb, dtype=object)
         self.type = np.zeros(self.nb)
         
         self.currency = np.zeros(self.nb)
@@ -46,7 +51,7 @@ class Economy(object):
                                
                                [parameters["v"]["2_0"], 
                                 parameters["v"]["2_1"],
-                                parameters["v"]["2_2"]]]) #Advantage of being a seller, buyer
+                                parameters["v"]["2_2"]] ]) #Advantage of being a seller, buyer
                                                                 #depending on the currency
         self.alpha = np.array([[   0 ,  0   , 0    ],
                                [0, 
@@ -145,6 +150,7 @@ class Economy(object):
             self.currency = np.append(self.currency, currency)
             newborn[i].fill(i + 1)
             self.nationality = np.append(self.nationality, newborn[i])
+            self.reward = np.append(self.reward, np.zeros(len(newborn[i]), dtype=object))
         
         assert len(np.where(self.currency == 0)) ==  len(np.where(currency == 1)) 
         assert len(np.where(self.nationality == 1)) == len(np.where(self.nationality == 2)) 
@@ -225,9 +231,12 @@ class Economy(object):
                     buyer = list(compress(range(len(check)), check))[0]
                     buyer_idx = (idx_1, idx_2)[buyer]
                     
+                    self.exchange_list.append(buyer_idx)
                     #find idx of 0 in check list (meaning seller)
                     seller = check.index(0)
                     seller_idx = (idx_1, idx_2)[seller]
+                    
+                    self.exchange_list.append(seller_idx)
                     
                     self.make_choice_and_exchange(buyer_idx, seller_idx) 
             
@@ -258,89 +267,56 @@ class Economy(object):
         if not seller_acceptance:
             seller_acceptance = (self.value[seller_nationality, buyer_currency]
                                 - self.c) > self.value[seller_nationality, 0]
+        
         if buyer_acceptance and seller_acceptance:
+            self.reward[buyer_idx] = (1, buyer_currency)
+            self.reward[seller_idx] = (0.5, 0)
+            
             self.currency[buyer_idx], self.currency[seller_idx] = \
             seller_currency, buyer_currency
 
-  #-----------------------------------------------------------------------------------------#
+        else:
+            self.reward[buyer_idx] = (0, buyer_currency)
+            self.reward[seller_idx] = (0, 0)
+
+#-----------------------------------------------------------------------------------------#
     def update_values(self):
+        for idx in self.exchange_list:
+            self.value[self.nationality[idx], self.reward[idx][1]] += \
+                    self.learn * (self.reward[idx][0] 
+                    - self.value[self.nationality[idx], self.reward[idx][1]])
+
+    def get_steady_state(self):
         
         for country in [1, 2]:
-            for currency in [0, 1, 2]:
-                
-                cond_mii  = (self.nationality == self.currency)\
-                            * (self.currency != 0)*(self.nationality == country)
+            cond_mii  = (self.nationality == self.currency)\
+                        * (self.currency != 0)*(self.nationality == country)
 
-                cond_mij  = (self.currency != self.nationality)*(self.currency != 0)\
-                            * (self.nationality == country)
-                
-                cond_mi0  = (self.currency != self.nationality)*(self.currency == 0)\
-                            * (self.nationality == country)
-                
-                cond_mji = (self.currency != self.nationality)*(self.currency != 0)\
-                            * (self.nationality == self.switch_country[country])
-                
-                cond_mjj = (self.nationality == self.currency)*(self.currency != 0)\
-                           * (self.nationality == self.switch_country[country])
-                
-                cond_mj0 =  (self.currency != self.nationality)*(self.currency == 0)\
-                            * (self.nationality == self.switch_country[country])
+            cond_mij  = (self.currency != self.nationality)*(self.currency != 0)\
+                        * (self.nationality == country)
+            
+            cond_mi0  = (self.currency != self.nationality)*(self.currency == 0)\
+                        * (self.nationality == country)
+            
+            cond_mji = (self.currency != self.nationality)*(self.currency != 0)\
+                        * (self.nationality == self.switch_country[country])
+            
+            cond_mjj = (self.nationality == self.currency)*(self.currency != 0)\
+                       * (self.nationality == self.switch_country[country])
+            
+            cond_mj0 =  (self.currency != self.nationality)*(self.currency == 0)\
+                        * (self.nationality == self.switch_country[country])
 
-                mii = len(self.currency[cond_mii]) / self.nb
-                mij = len(self.currency[cond_mij]) / self.nb
-                mi0 = len(self.currency[cond_mi0]) / self.nb
-                mji = len(self.currency[cond_mji]) / self.nb
-                mjj = len(self.currency[cond_mjj]) / self.nb
-                mj0 = len(self.currency[cond_mj0]) / self.nb
+            mii = len(self.currency[cond_mii]) / self.nb
+            mij = len(self.currency[cond_mij]) / self.nb
+            mi0 = len(self.currency[cond_mi0]) / self.nb
+            mji = len(self.currency[cond_mji]) / self.nb
+            mjj = len(self.currency[cond_mjj]) / self.nb
+            mj0 = len(self.currency[cond_mj0]) / self.nb
                 
-                #update value of being a seller depending on the country
-                if currency == 0:
-                    self.value[country, currency] = self.sigmoid(
-                                                    self.r
-                                                    * ((self.alpha[country, country]
-                                                    * mii 
-                                                    + self.alpha[country, self.switch_country[country]]
-                                                    * mji)
-                                                    * (self.value[country, country]
-                                                    - self.value[country, currency]
-                                                    - self.c)
-                                                    + (self.alpha[country, country]
-                                                    * mij
-                                                    + self.alpha[country, self.switch_country[country]]
-                                                    * mjj)
-                                                    * self.equilibrium[country]
-                                                    * (self.value[country, self.switch_country[country]]
-                                                    - self.value[country, currency]
-                                                    - self.c)))
-                
-                #update value of owning a local currency
-                elif currency == country:
-                    self.value[country, currency] = self.sigmoid(
-                                                    self.r
-                                                    * ((self.alpha[country, country]
-                                                    * mi0
-                                                    + self.alpha[country, self.switch_country[country]]
-                                                    * mj0
-                                                    * self.equilibrium[self.switch_country[country]])
-                                                    * (self.u
-                                                    + self.value[country, 0]
-                                                    - self.value[country, country])))
-                
-                #update value of owning a foreign currency
-                else:                                    
-                    self.value[country, currency] = self.sigmoid(
-                                                    self.r
-                                                    * ((self.alpha[country, country]
-                                                    * mi0
-                                                    * self.equilibrium[country]
-                                                    + self.alpha[country, self.switch_country[country]]
-                                                    * mj0)
-                                                    * (self.u
-                                                    + self.value[country, 0]
-                                                    - self.value[country, self.switch_country[country]])))
-                
-                #check if steady state equation is statisfied 
-                self.steady_state[country] = ((self.alpha[country, self.switch_country[country]]
+                                
+            #check if steady state equation is statisfied 
+            self.steady_state[country] = ((self.alpha[country, self.switch_country[country]]
                                              * mi0
                                              * mji)
                                              - (self.alpha[country, self.switch_country[country]]
@@ -390,6 +366,8 @@ class Economy(object):
             nb_of_meeting = Eco.poisson_distribution()
             Eco.main_agents_random_matching(population, nb_of_meeting)
             Eco.update_values()
+            Eco.get_steady_state()
+            Eco.exchange_list = []
             print(Eco.value)
             print(Eco.equilibrium)
             print(Eco.steady_state)
